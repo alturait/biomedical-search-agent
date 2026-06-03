@@ -1,15 +1,24 @@
-anthropic==0.104.1
-biopython==1.87
-langchain==1.3.1
-langchain-anthropic==1.4.3
-langchain-core==1.4.0
-langchain-groq==1.1.2
-langchain-openai==1.2.2
-langgraph==1.2.1
-langgraph-prebuilt==1.1.0
-langsmith==0.8.5
-openai==2.38.0
-python-dotenv==1.2.2
-requests==2.34.2
-streamlit==1.57.0
-groq==0.37.1
+# Core agent framework
+langchain>=0.3.0
+langchain-core>=0.3.0
+langgraph>=0.2.0
+
+# LLM providers
+langchain-anthropic>=0.2.0
+langchain-groq>=0.2.0
+langchain-openai>=0.2.0
+
+# PubMed / NCBI access
+biopython>=1.84
+requests>=2.32.0
+
+# Data handling
+pandas>=2.0.0
+pydantic>=2.0.0
+
+# Output & UI
+streamlit>=1.35.0
+python-dotenv>=1.0.0
+
+# Utilities
+tenacity>=8.3.0
