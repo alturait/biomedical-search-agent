@@ -1,0 +1,16 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.egg-info/
+dist/
+build/
+.idea/
+.vscode/
+results/
+alerts.json
+*.log
+
+# Setup notes that may contain credentials
+Grok API wound_care_search.txt
