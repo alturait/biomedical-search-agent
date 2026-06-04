@@ -183,18 +183,6 @@ with st.sidebar:
     date_to   = date_to_val.strftime("%Y/%m/%d")   if date_to_val   else ""
 
     st.markdown("---")
-    st.subheader("API Keys")
-    with st.expander("Enter API keys (or set in .env)"):
-        llm_key  = st.text_input(f"{provider.upper()} Key", type="password",
-                                  value=os.getenv(f"{provider.upper()}_API_KEY", ""))
-        ncbi_key = st.text_input("NCBI API Key (optional)", type="password",
-                                  value=os.getenv("NCBI_API_KEY", ""))
-        if llm_key:
-            os.environ[f"{provider.upper()}_API_KEY"] = llm_key
-        if ncbi_key:
-            os.environ["NCBI_API_KEY"] = ncbi_key
-
-    st.markdown("---")
     # Clear results button in sidebar so a fresh search can always be started
     if st.session_state.search_results is not None:
         if st.button("🗑️ Clear results", use_container_width=True):
