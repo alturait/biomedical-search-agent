@@ -72,9 +72,36 @@ for _key, _default in {
     "search_results":  None,   # full result dict from agent.search()
     "search_query":    "",     # query string that produced the results
     "search_running":  False,  # guard against double-submit
+    "authenticated":   False,  # password gate
 }.items():
     if _key not in st.session_state:
         st.session_state[_key] = _default
+
+
+# ── Password gate ─────────────────────────────────────────────────────────────
+# Set APP_PASSWORD in Streamlit Cloud → Settings → Secrets to enable.
+# If APP_PASSWORD is not set the gate is skipped (safe for local development).
+
+def _check_password() -> bool:
+    app_password = os.getenv("APP_PASSWORD", "")
+    if not app_password:
+        return True  # no password configured — open access (local dev)
+    if st.session_state.get("authenticated"):
+        return True
+
+    st.markdown("## 🔐 Wound Care Literature Search")
+    st.markdown("Enter the access password to continue.")
+    pwd = st.text_input("Password", type="password", placeholder="Enter password…")
+    if st.button("Login", type="primary"):
+        if pwd == app_password:
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("Incorrect password. Please try again.")
+    return False
+
+if not _check_password():
+    st.stop()
 
 
 # ── Download helpers ───────────────────────────────────────────────────────────
