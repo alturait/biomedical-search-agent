@@ -459,5 +459,16 @@ if st.session_state.search_results is not None:
             help="Evidence summary (Section 1) followed by every abstract (Section 2)",
         )
 
+        # ── New query button ───────────────────────────────────────────────────
+        st.divider()
+        col_left, col_center, col_right = st.columns([1, 2, 1])
+        with col_center:
+            if st.button("🔄 Clear Results & Start New Query",
+                         use_container_width=True, type="primary"):
+                st.session_state.search_results = None
+                st.session_state.search_query   = ""
+                st.session_state.authenticated  = st.session_state.get("authenticated", False)
+                st.rerun()
+
     else:
         st.warning("No articles found. Try broadening the query or removing date filters.")
