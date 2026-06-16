@@ -301,11 +301,11 @@ if st.session_state.search_results is not None:
 
     if articles:
 
-        # ── Tabs: Results Table | Evidence Summary ─────────────────────────────
-        tab1, tab2 = st.tabs(["📋 Results Table", "📝 Evidence Summary"])
+        # ── Tabs: Evidence Summary | Results Table ─────────────────────────────
+        tab1, tab2 = st.tabs(["📝 Evidence Summary", "📋 Results Table"])
 
-        # ── Tab 1 — Results table + CSV / JSON / BibTeX downloads ──────────────
-        with tab1:
+        # ── Tab 2 — Results table + CSV / JSON / BibTeX downloads ──────────────
+        with tab2:
             rows = []
             for r in articles:
                 rows.append({
@@ -378,8 +378,8 @@ if st.session_state.search_results is not None:
                 use_container_width=True,
             )
 
-        # ── Tab 2 — Evidence summary + downloads ───────────────────────────────
-        with tab2:
+        # ── Tab 1 — Evidence summary + downloads ───────────────────────────────
+        with tab1:
             if summary:
                 st.markdown(summary)
                 st.divider()
