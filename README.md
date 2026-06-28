@@ -131,6 +131,34 @@ streamlit run streamlit_app.py
 Opens at `http://localhost:8501`.  
 Enter API keys in the sidebar or pre-set them in `.env`.
 
+### Google sign-in setup
+
+The app requires Google sign-in (`st.login`) before it can be used. One-time setup:
+
+1. **Google Cloud Console** → [APIs & Services → Credentials](https://console.cloud.google.com/apis/credentials)
+   - Configure the **OAuth consent screen** first if you haven't (External, app name, support email — no sensitive scopes needed)
+   - Create an **OAuth 2.0 Client ID** → Application type: **Web application**
+   - Add **Authorized redirect URIs**:
+     - `http://localhost:8501/oauth2callback` (local dev)
+     - `https://<your-production-domain>/oauth2callback` (e.g. `https://azwoundcare.info/oauth2callback`)
+2. **Local dev** — copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` and fill in:
+   ```toml
+   [auth]
+   redirect_uri = "http://localhost:8501/oauth2callback"
+   cookie_secret = "<random — see comment in the example file>"
+   client_id = "<from Google Cloud Console>"
+   client_secret = "<from Google Cloud Console>"
+   server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
+   ```
+   This file is gitignored — never commit it.
+3. **Production (Render, or any host without a secrets-file UI)** — set these environment variables instead, and generate `.streamlit/secrets.toml` from them at startup. Example Render start command:
+   ```bash
+   bash -c 'mkdir -p .streamlit && printf "[auth]\nredirect_uri = \"%s\"\ncookie_secret = \"%s\"\nclient_id = \"%s\"\nclient_secret = \"%s\"\nserver_metadata_url = \"https://accounts.google.com/.well-known/openid-configuration\"\n" "$REDIRECT_URI" "$COOKIE_SECRET" "$GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_SECRET" > .streamlit/secrets.toml && streamlit run streamlit_app.py --server.port $PORT --server.address 0.0.0.0'
+   ```
+   With matching Render environment variables: `REDIRECT_URI`, `COOKIE_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
+
+Any Google account can sign in — there is no email allowlist. Add one in `streamlit_app.py` (check `st.user.email` after login) if you need to restrict access later.
+
 ---
 
 ## Example wound care queries

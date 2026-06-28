@@ -72,35 +72,19 @@ for _key, _default in {
     "search_results":  None,   # full result dict from agent.search()
     "search_query":    "",     # query string that produced the results
     "search_running":  False,  # guard against double-submit
-    "authenticated":   False,  # password gate
 }.items():
     if _key not in st.session_state:
         st.session_state[_key] = _default
 
 
-# ── Password gate ─────────────────────────────────────────────────────────────
-# Set APP_PASSWORD in Streamlit Cloud → Settings → Secrets to enable.
-# If APP_PASSWORD is not set the gate is skipped (safe for local development).
+# ── Google login gate ─────────────────────────────────────────────────────────
+# Requires [auth] in .streamlit/secrets.toml (local) or equivalent secrets on
+# the deployment platform — see .streamlit/secrets.toml.example for the fields.
 
-def _check_password() -> bool:
-    app_password = os.getenv("APP_PASSWORD", "")
-    if not app_password:
-        return True  # no password configured — open access (local dev)
-    if st.session_state.get("authenticated"):
-        return True
-
+if not st.user.is_logged_in:
     st.markdown("## 🔐 Wound Care Literature Search")
-    st.markdown("Enter the access password to continue.")
-    pwd = st.text_input("Password", type="password", placeholder="Enter password…")
-    if st.button("Login", type="primary"):
-        if pwd == app_password:
-            st.session_state.authenticated = True
-            st.rerun()
-        else:
-            st.error("Incorrect password. Please try again.")
-    return False
-
-if not _check_password():
+    st.markdown("Sign in with your Google account to continue.")
+    st.button("Sign in with Google", type="primary", on_click=st.login)
     st.stop()
 
 
@@ -179,6 +163,9 @@ def load_agent(provider: str, model: str, ncbi_key: str):
 
 with st.sidebar:
     st.title("🩹 Wound Care Agent")
+    st.caption(f"Signed in as {st.user.email}")
+    if st.button("Log out", use_container_width=True):
+        st.logout()
     st.markdown("---")
 
     st.subheader("LLM Provider")
@@ -467,7 +454,6 @@ if st.session_state.search_results is not None:
                          use_container_width=True, type="primary"):
                 st.session_state.search_results = None
                 st.session_state.search_query   = ""
-                st.session_state.authenticated  = st.session_state.get("authenticated", False)
                 st.rerun()
 
     else:
