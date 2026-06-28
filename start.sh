@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -e
 
+for var in REDIRECT_URI COOKIE_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET; do
+  if [ -z "${!var}" ]; then
+    echo "ERROR: $var is not set. Add it in Render → Environment before deploying." >&2
+    exit 1
+  fi
+done
+
 mkdir -p .streamlit
 cat > .streamlit/secrets.toml <<EOF
 [auth]
