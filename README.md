@@ -151,11 +151,14 @@ The app requires Google sign-in (`st.login`) before it can be used. One-time set
    server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
    ```
    This file is gitignored — never commit it.
-3. **Production (Render, or any host without a secrets-file UI)** — set these environment variables instead, and generate `.streamlit/secrets.toml` from them at startup. Example Render start command:
-   ```bash
-   bash -c 'mkdir -p .streamlit && printf "[auth]\nredirect_uri = \"%s\"\ncookie_secret = \"%s\"\nclient_id = \"%s\"\nclient_secret = \"%s\"\nserver_metadata_url = \"https://accounts.google.com/.well-known/openid-configuration\"\n" "$REDIRECT_URI" "$COOKIE_SECRET" "$GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_SECRET" > .streamlit/secrets.toml && streamlit run streamlit_app.py --server.port $PORT --server.address 0.0.0.0'
+3. **Production (Render, or any host without a secrets-file UI)** — set these environment variables, and let `start.sh` generate `.streamlit/secrets.toml` from them at startup:
+   - `REDIRECT_URI`, `COOKIE_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+
+   Set the Render **Start Command** to:
    ```
-   With matching Render environment variables: `REDIRECT_URI`, `COOKIE_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
+   bash start.sh
+   ```
+   (Don't paste the secrets-generation logic directly into Render's Start Command field — long inline commands with embedded quotes get mangled by the UI. `start.sh` keeps it in a file instead.)
 
 Any Google account can sign in — there is no email allowlist. Add one in `streamlit_app.py` (check `st.user.email` after login) if you need to restrict access later.
 
