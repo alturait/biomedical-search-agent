@@ -194,7 +194,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader("Search Parameters")
-    max_results = st.slider("Max results", 5, 25, 20, 5)
+    max_results = st.slider("Max results", 5, 25, 5, 5)
     article_type = st.selectbox(
         "Article type filter",
         ["all", "review", "systematic_review", "meta-analysis",
