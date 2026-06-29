@@ -69,9 +69,10 @@ st.set_page_config(
 # article dropdown does NOT wipe the screen — data persists until a new search.
 
 for _key, _default in {
-    "search_results":  None,   # full result dict from agent.search()
-    "search_query":    "",     # query string that produced the results
-    "search_running":  False,  # guard against double-submit
+    "search_results":   None,   # full result dict from agent.search()
+    "cochrane_results": None,   # dict from search_cochrane()
+    "search_query":     "",     # query string that produced the results
+    "search_running":   False,  # guard against double-submit
 }.items():
     if _key not in st.session_state:
         st.session_state[_key] = _default
@@ -200,8 +201,9 @@ with st.sidebar:
     # Clear results button in sidebar so a fresh search can always be started
     if st.session_state.search_results is not None:
         if st.button("🗑️ Clear results", use_container_width=True):
-            st.session_state.search_results = None
-            st.session_state.search_query   = ""
+            st.session_state.search_results   = None
+            st.session_state.cochrane_results = None
+            st.session_state.search_query     = ""
             st.rerun()
 
     st.caption("Searches PubMed via NCBI E-utilities. Respects rate limits.")
@@ -241,7 +243,7 @@ if search_btn and query.strip():
         st.info("Set your LLM API key in the sidebar or in a .env file.")
         st.stop()
 
-    with st.spinner("Searching PubMed and summarising evidence…"):
+    with st.spinner("Searching PubMed and Cochrane, summarising evidence…"):
         try:
             result = agent.search(
                 query=query,
@@ -251,12 +253,27 @@ if search_btn and query.strip():
                 date_to=date_to,
             )
         except Exception as exc:
-            st.error(f"Search failed: {exc}")
+            st.error(f"PubMed search failed: {exc}")
             st.stop()
 
-    # Persist to session state — this survives all subsequent reruns
-    st.session_state.search_results = result
-    st.session_state.search_query   = query
+        try:
+            from tools import search_cochrane
+            cochrane = search_cochrane(
+                query=query,
+                max_results=max_results,
+                date_from=date_from,
+                date_to=date_to,
+                api_key=os.getenv("NCBI_API_KEY", ""),
+            )
+        except Exception as exc:
+            st.warning(f"Cochrane search failed: {exc}")
+            cochrane = {"reviews": [], "central": [], "review_total": 0, "central_total": 0,
+                        "review_query": "", "central_query": ""}
+
+    # Persist to session state — survives all subsequent reruns
+    st.session_state.search_results   = result
+    st.session_state.cochrane_results = cochrane
+    st.session_state.search_query     = query
 
 elif search_btn and not query.strip():
     st.warning("Please enter a search query.")
@@ -288,8 +305,8 @@ if st.session_state.search_results is not None:
 
     if articles:
 
-        # ── Tabs: Evidence Summary | Results Table ─────────────────────────────
-        tab1, tab2 = st.tabs(["📝 Evidence Summary", "📋 Results Table"])
+        # ── Tabs: Evidence Summary | PubMed Results | Cochrane ────────────────
+        tab1, tab2, tab3 = st.tabs(["📝 Evidence Summary", "📋 PubMed Results", "🔬 Cochrane"])
 
         # ── Tab 2 — Results table + CSV / JSON / BibTeX downloads ──────────────
         with tab2:
@@ -389,7 +406,132 @@ if st.session_state.search_results is not None:
             else:
                 st.info("No summary generated.")
 
-        # ── Abstract viewer ────────────────────────────────────────────────────
+        # ── Tab 3 — Cochrane Reviews + CENTRAL ────────────────────────────────
+        with tab3:
+            coch = st.session_state.cochrane_results or {}
+            c_reviews = coch.get("reviews", [])
+            c_central = coch.get("central", [])
+
+            cc1, cc2 = st.columns(2)
+            cc1.metric("Cochrane Reviews (total hits)", coch.get("review_total", 0))
+            cc2.metric("CENTRAL trials (total hits)",   coch.get("central_total", 0))
+
+            # ── Cochrane Systematic Reviews ────────────────────────────────────
+            st.subheader("Cochrane Systematic Reviews")
+            if c_reviews:
+                with st.expander("PubMed query used"):
+                    st.code(coch.get("review_query", ""), language="text")
+
+                rev_rows = [{
+                    "PMID":    r.pmid,
+                    "Year":    r.pub_date[:4] if r.pub_date else "—",
+                    "Title":   r.title,
+                    "Authors": r.format_authors(2),
+                    "Journal": r.journal,
+                    "DOI":     r.doi or "",
+                    "URL":     r.pubmed_url,
+                } for r in c_reviews]
+                df_rev = pd.DataFrame(rev_rows)
+                st.dataframe(df_rev, use_container_width=True,
+                    column_config={
+                        "URL": st.column_config.LinkColumn("PubMed Link"),
+                        "DOI": st.column_config.LinkColumn("DOI"),
+                        "PMID": st.column_config.TextColumn("PMID", width="small"),
+                        "Year": st.column_config.TextColumn("Year", width="small"),
+                    }, hide_index=True)
+
+                rev_sel = st.selectbox("Select a Cochrane Review",
+                    [f"{r.pmid} — {r.title[:65]}" for r in c_reviews],
+                    key="selected_cochrane_review")
+                if rev_sel:
+                    sel_r = next(r for r in c_reviews if rev_sel.startswith(r.pmid))
+                    st.markdown(f"**{sel_r.title}**")
+                    st.caption(f"{sel_r.format_authors(5)} · {sel_r.journal} · "
+                               f"{sel_r.pub_date[:4]}" +
+                               (f" · [DOI](https://doi.org/{sel_r.doi})" if sel_r.doi else "") +
+                               f" · [PubMed]({sel_r.pubmed_url})")
+                    st.markdown(sel_r.abstract or "_No abstract available._")
+                    st.download_button(
+                        f"⬇ Download this abstract (PMID {sel_r.pmid})",
+                        data=_format_single_abstract(sel_r),
+                        file_name=f"cochrane_abstract_{sel_r.pmid}.txt",
+                        mime="text/plain",
+                    )
+
+                st.subheader("Export Cochrane Reviews")
+                rc1, rc2 = st.columns(2)
+                rev_csv = io.StringIO()
+                df_rev.to_csv(rev_csv, index=False)
+                rc1.download_button("⬇ Download CSV", data=rev_csv.getvalue(),
+                    file_name="cochrane_reviews.csv", mime="text/csv",
+                    use_container_width=True)
+                rc2.download_button("⬇ All Abstracts (TXT)",
+                    data=_format_all_abstracts(c_reviews, saved_query),
+                    file_name="cochrane_reviews_abstracts.txt", mime="text/plain",
+                    use_container_width=True)
+            else:
+                st.info("No Cochrane Systematic Reviews found for this query.")
+
+            st.divider()
+
+            # ── CENTRAL — Controlled Trials ────────────────────────────────────
+            st.subheader("CENTRAL — Controlled Trials")
+            if c_central:
+                with st.expander("PubMed query used"):
+                    st.code(coch.get("central_query", ""), language="text")
+
+                ct_rows = [{
+                    "PMID":    r.pmid,
+                    "Year":    r.pub_date[:4] if r.pub_date else "—",
+                    "Title":   r.title,
+                    "Authors": r.format_authors(2),
+                    "Journal": r.journal,
+                    "Type":    r.article_type[0] if r.article_type else "RCT",
+                    "DOI":     r.doi or "",
+                    "URL":     r.pubmed_url,
+                } for r in c_central]
+                df_ct = pd.DataFrame(ct_rows)
+                st.dataframe(df_ct, use_container_width=True,
+                    column_config={
+                        "URL": st.column_config.LinkColumn("PubMed Link"),
+                        "DOI": st.column_config.LinkColumn("DOI"),
+                        "PMID": st.column_config.TextColumn("PMID", width="small"),
+                        "Year": st.column_config.TextColumn("Year", width="small"),
+                    }, hide_index=True)
+
+                ct_sel = st.selectbox("Select a trial",
+                    [f"{r.pmid} — {r.title[:65]}" for r in c_central],
+                    key="selected_central_trial")
+                if ct_sel:
+                    sel_ct = next(r for r in c_central if ct_sel.startswith(r.pmid))
+                    st.markdown(f"**{sel_ct.title}**")
+                    st.caption(f"{sel_ct.format_authors(5)} · {sel_ct.journal} · "
+                               f"{sel_ct.pub_date[:4]}" +
+                               (f" · [DOI](https://doi.org/{sel_ct.doi})" if sel_ct.doi else "") +
+                               f" · [PubMed]({sel_ct.pubmed_url})")
+                    st.markdown(sel_ct.abstract or "_No abstract available._")
+                    st.download_button(
+                        f"⬇ Download this abstract (PMID {sel_ct.pmid})",
+                        data=_format_single_abstract(sel_ct),
+                        file_name=f"central_abstract_{sel_ct.pmid}.txt",
+                        mime="text/plain",
+                    )
+
+                st.subheader("Export CENTRAL Trials")
+                tc1, tc2 = st.columns(2)
+                ct_csv = io.StringIO()
+                df_ct.to_csv(ct_csv, index=False)
+                tc1.download_button("⬇ Download CSV", data=ct_csv.getvalue(),
+                    file_name="central_trials.csv", mime="text/csv",
+                    use_container_width=True)
+                tc2.download_button("⬇ All Abstracts (TXT)",
+                    data=_format_all_abstracts(c_central, saved_query),
+                    file_name="central_trials_abstracts.txt", mime="text/plain",
+                    use_container_width=True)
+            else:
+                st.info("No controlled trials found for this query.")
+
+        # ── Abstract viewer (PubMed) ───────────────────────────────────────────
         st.divider()
         st.subheader("Article Abstracts")
 
@@ -452,8 +594,9 @@ if st.session_state.search_results is not None:
         with col_center:
             if st.button("🔄 Clear Results & Start New Query",
                          use_container_width=True, type="primary"):
-                st.session_state.search_results = None
-                st.session_state.search_query   = ""
+                st.session_state.search_results   = None
+                st.session_state.cochrane_results = None
+                st.session_state.search_query     = ""
                 st.rerun()
 
     else:

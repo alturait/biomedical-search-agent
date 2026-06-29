@@ -328,6 +328,45 @@ def fetch_abstracts_tool(pmids: list[str], api_key: str = "") -> dict:
     }
 
 
+def search_cochrane(
+    query: str,
+    max_results: int = 10,
+    date_from: str = "",
+    date_to: str = "",
+    api_key: str = "",
+) -> dict:
+    """
+    Search PubMed for Cochrane Systematic Reviews and CENTRAL (RCT) records.
+
+    Returns two lists: reviews (Cochrane Database of Systematic Reviews) and
+    central (randomized controlled trials indexed in PubMed / CENTRAL).
+    """
+    base_mesh = build_mesh_query(query, "all", None)
+
+    # Cochrane Systematic Reviews — filtered by journal
+    rev_query = f'({base_mesh}) AND "Cochrane Database Syst Rev"[Journal]'
+    rev_pmids, rev_total = _esearch(rev_query, max_results, date_from, date_to, api_key)
+    reviews: list[ArticleResult] = []
+    for i in range(0, len(rev_pmids), 20):
+        reviews.extend(_efetch_batch(rev_pmids[i : i + 20], api_key))
+
+    # CENTRAL — RCTs indexed in PubMed (primary CENTRAL source)
+    rct_query = f'({base_mesh}) AND "Randomized Controlled Trial"[pt]'
+    rct_pmids, rct_total = _esearch(rct_query, max_results, date_from, date_to, api_key)
+    central: list[ArticleResult] = []
+    for i in range(0, len(rct_pmids), 20):
+        central.extend(_efetch_batch(rct_pmids[i : i + 20], api_key))
+
+    return {
+        "reviews":       reviews,
+        "central":       central,
+        "review_total":  rev_total,
+        "central_total": rct_total,
+        "review_query":  rev_query,
+        "central_query": rct_query,
+    }
+
+
 @tool("refine_wound_care_query", args_schema=RefineInput)
 def refine_query_tool(query: str) -> dict:
     """
