@@ -63,6 +63,19 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── Google Analytics 4 ────────────────────────────────────────────────────────
+_ga_id = os.getenv("GA_MEASUREMENT_ID", "")
+if _ga_id:
+    st.html(f"""
+<script async src="https://www.googletagmanager.com/gtag/js?id={_ga_id}"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){{dataLayer.push(arguments);}}
+  gtag('js', new Date());
+  gtag('config', '{_ga_id}');
+</script>
+""")
+
 
 # ── Session state initialisation ──────────────────────────────────────────────
 # Results are stored here so that clicking download buttons or changing the
