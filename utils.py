@@ -175,6 +175,30 @@ WOUND_CARE_MESH: dict[str, str] = {
     "peripheral artery":       '"Peripheral Arterial Disease"[Mesh]',
     "lymphedema":              '"Lymphedema"[Mesh]',
 
+    # Podiatric compound queries
+    "diabetic foot ulcer wound bed preparation": (
+        '"Diabetic Foot"[Mesh] AND "Foot Ulcer"[Mesh] AND '
+        '"Debridement"[Mesh] AND "Wound Healing"[Mesh]'
+    ),
+    "wound infection biofilm debridement": (
+        '"Wound Infection"[Mesh] AND "Biofilms"[Mesh] AND "Debridement"[Mesh]'
+    ),
+    "arterial ulcer wound healing": (
+        '"Leg Ulcer"[Mesh] AND "Arterial Occlusive Diseases"[Mesh] AND "Wound Healing"[Mesh]'
+    ),
+    "amputation wound closure": (
+        '"Amputation"[Mesh] AND "Wound Healing"[Mesh]'
+    ),
+    "pressure injury diabetic foot": (
+        '"Pressure Ulcer"[Mesh] AND "Diabetic Foot"[Mesh]'
+    ),
+    "skin graft wound bed preparation": (
+        '"Skin Transplantation"[Mesh] AND "Debridement"[Mesh] AND "Wound Healing"[Mesh]'
+    ),
+    "wound pain debridement": (
+        '"Pain Management"[Mesh] AND "Wound Healing"[Mesh] AND "Debridement"[Mesh]'
+    ),
+
     # Outcomes
     "quality of life":         '"Quality of Life"[Mesh]',
     "pain":                    '"Pain"[Mesh]',
