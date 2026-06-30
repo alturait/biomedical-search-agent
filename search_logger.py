@@ -17,7 +17,11 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-LOG_FILE = Path(os.getenv("SEARCH_LOG_FILE", "search_log.csv"))
+# On Render, default to the persistent disk mount path (/data).
+# Locally, default to the working directory.
+# Override either with SEARCH_LOG_FILE env var.
+_default_log = "/data/search_log.csv" if os.getenv("RENDER") else "search_log.csv"
+LOG_FILE = Path(os.getenv("SEARCH_LOG_FILE", _default_log))
 
 _FIELDS = [
     "timestamp",
