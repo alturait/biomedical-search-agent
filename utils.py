@@ -148,6 +148,10 @@ WOUND_CARE_MESH: dict[str, str] = {
     "stem cell":               '"Stem Cells"[Mesh]',
     "becaplermin":             '"Becaplermin"[Mesh]',
     "pdgf":                    '"Becaplermin"[Mesh]',
+    "autologous blood clot therapy": '(autologous blood clot[tiab] AND "Wound Healing"[Mesh])',
+    "whole blood clot":        '("Blood Coagulation"[Mesh] AND "Wound Healing"[Mesh])',
+    "extracellular matrix":    '"Extracellular Matrix"[Mesh]',
+    "fibrin":                  '"Fibrin"[Mesh]',
 
     # Infection / microbiology
     "wound infection":         '"Wound Infection"[Mesh]',
