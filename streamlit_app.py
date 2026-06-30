@@ -10,6 +10,7 @@ import io
 import json
 import logging
 import os
+import re
 from datetime import date, datetime
 
 import pandas as pd
@@ -158,6 +159,21 @@ def _build_full_report(summary: str, articles, query: str = "") -> str:
         _format_all_abstracts(articles, query),
     ]
     return "\n".join(parts)
+
+
+# ── PMID link helper ──────────────────────────────────────────────────────────
+
+_PMID_RE = re.compile(r'\bPMID\s*:?\s*(\d+)\b')
+
+def _linkify_pmids(text: str) -> str:
+    """Replace every 'PMID 12345678' pattern with an HTML link to PubMed."""
+    return _PMID_RE.sub(
+        lambda m: (
+            f'<a href="https://pubmed.ncbi.nlm.nih.gov/{m.group(1)}/" '
+            f'target="_blank">PMID {m.group(1)}</a>'
+        ),
+        text,
+    )
 
 
 # ── Agent loader (cached per provider+model so it survives reruns) ─────────────
@@ -399,7 +415,7 @@ if st.session_state.search_results is not None:
         # ── Tab 1 — Evidence summary + downloads ───────────────────────────────
         with tab1:
             if summary:
-                st.markdown(summary)
+                st.markdown(_linkify_pmids(summary), unsafe_allow_html=True)
                 st.divider()
                 st.subheader("Download Evidence Summary")
                 scol1, scol2 = st.columns(2)
