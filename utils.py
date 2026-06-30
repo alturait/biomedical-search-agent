@@ -127,6 +127,11 @@ WOUND_CARE_MESH: dict[str, str] = {
     "povidone iodine":         '"Povidone-Iodine"[Mesh]',
 
     # Procedures
+    "sonic debridement":       '("Debridement"[Mesh] AND "Ultrasonic Therapy"[Mesh])',
+    "ultrasonic debridement":  '("Debridement"[Mesh] AND "Ultrasonic Therapy"[Mesh])',
+    "wound bed preparation":   '("Debridement"[Mesh] AND "Wound Healing"[Mesh])',
+    "slough":                  '"Necrosis"[Mesh]',
+    "wound pain":              '("Pain Management"[Mesh] AND "Wound Healing"[Mesh])',
     "debridement":             '"Debridement"[Mesh]',
     "skin graft":              '"Skin Transplantation"[Mesh]',
     "skin grafting":           '"Skin Transplantation"[Mesh]',
