@@ -162,18 +162,25 @@ def _build_full_report(summary: str, articles, query: str = "") -> str:
 
 
 # ── PMID link helper ──────────────────────────────────────────────────────────
+# Matches "PMID 12345678" optionally followed by ", 23456789, 34567890 ..."
+# so that every number in a comma-separated group becomes a link while
+# the "PMID" label itself stays as plain text.
 
-_PMID_RE = re.compile(r'\bPMID\s*:?\s*(\d+)\b')
+_PMID_GROUP_RE = re.compile(r'\bPMID\s*:?\s*(\d+)((?:\s*,\s*\d+)*)')
 
 def _linkify_pmids(text: str) -> str:
-    """Replace every 'PMID 12345678' pattern with an HTML link to PubMed."""
-    return _PMID_RE.sub(
-        lambda m: (
-            f'<a href="https://pubmed.ncbi.nlm.nih.gov/{m.group(1)}/" '
-            f'target="_blank">PMID {m.group(1)}</a>'
-        ),
-        text,
-    )
+    """Turn PMID references into PubMed links (number only, new tab)."""
+    def _link(pmid: str) -> str:
+        return (f'<a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}/"'
+                f' target="_blank">{pmid}</a>')
+
+    def _replace(m: re.Match) -> str:
+        result = f'PMID {_link(m.group(1))}'
+        for extra in re.findall(r'\d+', m.group(2) or ""):
+            result += f', {_link(extra)}'
+        return result
+
+    return _PMID_GROUP_RE.sub(_replace, text)
 
 
 # ── Agent loader (cached per provider+model so it survives reruns) ─────────────
