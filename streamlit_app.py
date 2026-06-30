@@ -312,6 +312,24 @@ if search_btn and query.strip():
     st.session_state.cochrane_results = cochrane
     st.session_state.search_query     = query
 
+    # Audit log — search query, user, and result counts
+    try:
+        from search_logger import log_search
+        log_search(
+            email          = st.user.email or "unknown",
+            query          = query,
+            provider       = provider,
+            model          = model,
+            article_type   = article_type,
+            date_from      = date_from,
+            date_to        = date_to,
+            pubmed_results = len(result.get("articles", [])),
+            cochrane_reviews = len(cochrane.get("reviews", [])),
+            central_trials   = len(cochrane.get("central", [])),
+        )
+    except Exception as _log_exc:
+        logging.getLogger(__name__).warning("Audit log failed: %s", _log_exc)
+
 elif search_btn and not query.strip():
     st.warning("Please enter a search query.")
 

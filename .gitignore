@@ -11,6 +11,7 @@ build/
 .vscode/
 results/
 alerts.json
+search_log.csv
 *.log
 
 # Setup notes that may contain credentials
