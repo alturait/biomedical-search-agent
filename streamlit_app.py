@@ -240,6 +240,7 @@ example_queries = [
     "negative pressure wound therapy diabetic foot ulcers",
     "best dressings for pressure injuries 2023-2026",
     "biofilm management chronic wounds",
+    "autologous blood clot therapy",
 ]
 st.caption("Examples: " + " · ".join(f"`{q}`" for q in example_queries))
 
