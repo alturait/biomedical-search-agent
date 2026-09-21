@@ -50,7 +50,7 @@ def get_llm(provider: str, model: str | None = None):
         key = os.getenv("ANTHROPIC_API_KEY")
         if not key:
             raise EnvironmentError("ANTHROPIC_API_KEY is not set.")
-        return ChatAnthropic(model=model or "claude-opus-4-7", api_key=key)
+        return ChatAnthropic(model=model or "claude-opus-4-8", api_key=key)
 
     if provider == "groq":
         from langchain_groq import ChatGroq
@@ -241,7 +241,7 @@ Examples:
   python main.py "negative pressure wound therapy diabetic foot"
   python main.py "pressure ulcer prevention" -t systematic_review -n 30
   python main.py "wound dressings 2024" --date-from 2024/01/01 --date-to 2026/12/31 -o ./results
-  python main.py --interactive -p anthropic -m claude-opus-4-7
+  python main.py --interactive -p anthropic -m claude-opus-4-8
         """,
     )
 

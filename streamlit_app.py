@@ -12,6 +12,7 @@ import logging
 import os
 import re
 from datetime import date, datetime
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -87,6 +88,8 @@ for _key, _default in {
     "cochrane_results": None,   # dict from search_cochrane()
     "search_query":     "",     # query string that produced the results
     "search_running":   False,  # guard against double-submit
+    "appeal_result":    None,   # dict from agent.generate_appeal_evidence()
+    "appeal_inputs":    None,   # {product, diagnosis, denial_reason, ...} that produced it
 }.items():
     if _key not in st.session_state:
         st.session_state[_key] = _default
@@ -205,13 +208,9 @@ with st.sidebar:
         st.logout()
     st.markdown("---")
 
-    st.subheader("LLM Provider")
-    provider = st.selectbox("Provider", ["openai", "anthropic", "groq"])
+    provider = "openai"
     model_map = {
-        "openai":    ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
-        "anthropic": ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
-        "groq":      ["llama-3.3-70b-versatile", "Qwen/Qwen3-32B",
-                      "meta-llama/llama-4-scout-17b-16e-instruct", "llama-3.1-8b-instant"],
+        "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
     }
     model = st.selectbox("Model", model_map[provider])
 
@@ -243,6 +242,181 @@ with st.sidebar:
             st.rerun()
 
     st.caption("Searches PubMed via NCBI E-utilities. Respects rate limits.")
+
+
+# ── PA Appeal Builder ──────────────────────────────────────────────────────────
+# Independent of the literature-search flow below: takes only a product,
+# diagnosis, and denial-reason category — no patient-identifying data is
+# collected, stored, or written anywhere by this section.
+
+st.header("📄 Prior Authorization Appeal Builder")
+st.markdown(
+    "Generate the **Clinical Rationale** and **PMID evidence table** for Section 4 "
+    "of the wound-graft prior-authorization appeal template — tailored to the "
+    "payer's specific denial reason. No patient-identifying information is collected "
+    "or stored here; fill in patient details directly in the downloaded document."
+)
+
+from ctp_products import CTP_PRODUCTS, DENIAL_REASONS  # noqa: E402
+
+with st.form("appeal_builder_form"):
+    fa_col1, fa_col2 = st.columns(2)
+    with fa_col1:
+        product_key = st.selectbox(
+            "Product / CTP",
+            list(CTP_PRODUCTS.keys()),
+            format_func=lambda k: CTP_PRODUCTS[k]["display"],
+        )
+    with fa_col2:
+        denial_key = st.selectbox(
+            "Payer denial reason",
+            list(DENIAL_REASONS.keys()),
+            format_func=lambda k: DENIAL_REASONS[k],
+        )
+
+    _product_info = CTP_PRODUCTS[product_key]
+    diagnosis_input = st.text_input(
+        "Diagnosis / wound type",
+        value=(_product_info["indications"][0] if _product_info["indications"] else ""),
+        placeholder="e.g. diabetic foot ulcer",
+        help="A general diagnosis or wound type — not a patient-specific detail.",
+    )
+
+    appeal_submit = st.form_submit_button(
+        "📑 Generate appeal evidence", type="primary", use_container_width=True
+    )
+
+if appeal_submit:
+    if not diagnosis_input.strip():
+        st.warning("Please enter a diagnosis / wound type.")
+    else:
+        appeal_agent, appeal_err = load_agent(provider, model, os.getenv("NCBI_API_KEY", ""))
+        if appeal_err:
+            st.error(f"Agent initialisation failed: {appeal_err}")
+        else:
+            with st.spinner("Searching PubMed and drafting denial-reason-targeted evidence…"):
+                try:
+                    appeal_result = appeal_agent.generate_appeal_evidence(
+                        product=_product_info["display"],
+                        diagnosis=diagnosis_input.strip(),
+                        denial_reason=denial_key,
+                    )
+                except Exception as exc:
+                    st.error(f"Evidence generation failed: {exc}")
+                    appeal_result = None
+
+            if appeal_result is not None:
+                st.session_state.appeal_result = appeal_result
+                st.session_state.appeal_inputs = {
+                    "product":             _product_info["display"],
+                    "diagnosis":           diagnosis_input.strip(),
+                    "denial_reason":       denial_key,
+                    "denial_reason_label": DENIAL_REASONS[denial_key],
+                }
+                try:
+                    from search_logger import log_appeal_generation
+                    log_appeal_generation(
+                        email=st.user.email or "unknown",
+                        product=_product_info["display"],
+                        diagnosis=diagnosis_input.strip(),
+                        denial_reason=denial_key,
+                        provider=provider,
+                        model=model,
+                        articles_considered=appeal_result.get("articles_considered", 0),
+                        evidence_rows=len(appeal_result.get("evidence_rows", [])),
+                    )
+                except Exception as _appeal_log_exc:
+                    logging.getLogger(__name__).warning(
+                        "Appeal audit log failed: %s", _appeal_log_exc
+                    )
+
+if st.session_state.appeal_result is not None:
+    _ar = st.session_state.appeal_result
+    _ai = st.session_state.appeal_inputs or {}
+
+    if not _ar.get("evidence_rows"):
+        st.warning(
+            "No supporting PubMed articles were found for this product/diagnosis "
+            "combination. Try broadening the diagnosis term."
+        )
+    else:
+        st.subheader("Clinical Rationale")
+        st.markdown(_linkify_pmids(_ar["clinical_rationale"]), unsafe_allow_html=True)
+
+        st.subheader("Supporting Peer-Reviewed Literature")
+        _ev_df = pd.DataFrame([
+            {
+                "PMID": row["pmid"],
+                "Author(s), Journal, Year": row["citation"],
+                "Evidence Level": row["evidence_level"],
+                "Key Finding": row["key_finding"],
+                "URL": row["pubmed_url"],
+            }
+            for row in _ar["evidence_rows"]
+        ])
+        st.dataframe(
+            _ev_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={"URL": st.column_config.LinkColumn("PubMed Link")},
+        )
+        st.caption(
+            f"{_ar.get('articles_considered', 0)} candidate articles reviewed; "
+            f"top {len(_ar['evidence_rows'])} selected by evidence level and recency."
+        )
+
+        st.divider()
+        st.subheader("Download")
+        _dl_col1, _dl_col2 = st.columns(2)
+
+        _appeal_txt = (
+            f"Clinical Rationale:\n{_ar['clinical_rationale']}\n\n"
+            "Supporting Peer-Reviewed Literature:\n" + "\n".join(
+                f"- PMID {row['pmid']} | {row['citation']} | {row['evidence_level']} | {row['key_finding']}"
+                for row in _ar["evidence_rows"]
+            )
+        )
+        _dl_col1.download_button(
+            "⬇ Copy-paste text (.txt)",
+            data=_appeal_txt,
+            file_name="pa_appeal_section4.txt",
+            mime="text/plain",
+            use_container_width=True,
+        )
+
+        try:
+            from docx_export import fill_section4
+            _template_path = os.getenv(
+                "PA_TEMPLATE_PATH",
+                str(Path(__file__).resolve().parent.parent / "PA_Biological_Dressing_Template.docx"),
+            )
+            if os.path.exists(_template_path):
+                _buf = io.BytesIO()
+                fill_section4(
+                    template_path=_template_path,
+                    output=_buf,
+                    product=_ai.get("product", ""),
+                    diagnosis=_ai.get("diagnosis", ""),
+                    denial_reason_label=_ai.get("denial_reason_label", ""),
+                    clinical_rationale=_ar["clinical_rationale"],
+                    evidence_rows=_ar["evidence_rows"],
+                    generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
+                )
+                _dl_col2.download_button(
+                    "⬇ Filled Section 4 (.docx)",
+                    data=_buf.getvalue(),
+                    file_name="PA_Appeal_Section4_filled.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True,
+                )
+            else:
+                _dl_col2.info(
+                    f"Template not found at {_template_path} — set PA_TEMPLATE_PATH."
+                )
+        except Exception as exc:
+            _dl_col2.warning(f"Could not generate .docx: {exc}")
+
+st.divider()
 
 
 # ── Main area — search bar ────────────────────────────────────────────────────

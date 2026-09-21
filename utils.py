@@ -207,7 +207,65 @@ WOUND_CARE_MESH: dict[str, str] = {
     "wound closure":           "wound closure[tiab]",
     "recurrence":              '"Recurrence"[Mesh]',
     "amputation":              '"Amputation"[Mesh]',
+
+    # CTP / wound-graft brand names — PubMed's MeSH vocabulary doesn't index brand
+    # names, so each maps to the closest controlled-vocabulary concept OR'd with a
+    # title/abstract keyword fallback so product-specific papers are still found.
+    "apligraf":       '("Skin, Artificial"[Mesh] OR apligraf[tiab])',
+    "oasis":          '("Extracellular Matrix"[Mesh] OR "oasis wound matrix"[tiab] OR (oasis[tiab] AND wound[tiab]))',
+    "dermagraft":     '("Skin, Artificial"[Mesh] OR dermagraft[tiab])',
+    "epifix":         '("Amnion"[Mesh] OR epifix[tiab])',
+    "mimedx":         '("Amnion"[Mesh] OR epifix[tiab] OR mimedx[tiab])',
+    "strattice":      '("Acellular Dermis"[Mesh] OR strattice[tiab])',
+    "kerecis":        '("fish skin graft"[tiab] OR kerecis[tiab])',
+    "amniofix":       '("Amnion"[Mesh] OR "Chorion"[Mesh] OR amniofix[tiab])',
+    "acell":          '("Amnion"[Mesh] OR "Chorion"[Mesh] OR amniofix[tiab] OR acellular[tiab])',
+    "actigraft":      '(actigraft[tiab] OR (autologous blood clot[tiab] AND "Wound Healing"[Mesh]))',
+    "cellular tissue product": '("Skin, Artificial"[Mesh] OR "Bioprosthesis"[Mesh] OR "Tissue Scaffolds"[Mesh])',
+    "ctp":            '("Skin, Artificial"[Mesh] OR "Bioprosthesis"[Mesh] OR "Tissue Scaffolds"[Mesh])',
 }
+
+# ── Evidence-level classification ─────────────────────────────────────────────
+# Ordinal hierarchy used to rank candidate articles for prior-authorization
+# appeals — strongest study designs first. Built from the raw PubMed
+# PublicationType values ArticleResult.article_type already carries; no new
+# PubMed fields are needed.
+
+EVIDENCE_LEVEL_ORDER: list[str] = [
+    "Systematic Review / Meta-Analysis",
+    "Randomized Controlled Trial",
+    "Cohort / Observational Study",
+    "Case Series / Case Report",
+    "Other / Narrative Review",
+]
+
+_EVIDENCE_LEVEL_RANK = {label: i for i, label in enumerate(EVIDENCE_LEVEL_ORDER)}
+
+
+def classify_evidence_level(article_type: list[str]) -> str:
+    """Map raw PubMed PublicationType values to an ordinal evidence-level label."""
+    types = {t.lower() for t in article_type}
+    if any("meta-analysis" in t or "systematic review" in t for t in types):
+        return "Systematic Review / Meta-Analysis"
+    if any("randomized controlled trial" in t for t in types):
+        return "Randomized Controlled Trial"
+    if any("cohort" in t or "observational study" in t or "comparative study" in t
+           or "clinical trial" in t for t in types):
+        return "Cohort / Observational Study"
+    if any("case reports" in t or "case series" in t for t in types):
+        return "Case Series / Case Report"
+    return "Other / Narrative Review"
+
+
+def rank_articles(articles: list[ArticleResult]) -> list[ArticleResult]:
+    """Sort articles by evidence level (strongest first), then by recency."""
+    def _sort_key(a: ArticleResult) -> tuple[int, int]:
+        rank = _EVIDENCE_LEVEL_RANK.get(classify_evidence_level(a.article_type), len(EVIDENCE_LEVEL_ORDER))
+        year_str = (a.pub_date or "")[:4]
+        year = int(year_str) if year_str.isdigit() else 0
+        return (rank, -year)
+
+    return sorted(articles, key=_sort_key)
 
 ARTICLE_TYPE_FILTERS: dict[str, str] = {
     "all":              "",

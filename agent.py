@@ -23,16 +23,19 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
+from pydantic import BaseModel, Field
 
 from tools import fetch_abstracts_tool, refine_query_tool, search_pubmed_tool
 from utils import (
     ArticleResult,
+    classify_evidence_level,
     console,
     deduplicate_results,
     display_results_table,
     export_to_bibtex,
     export_to_csv,
     export_to_json,
+    rank_articles,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,6 +71,57 @@ _SUMMARY_SYSTEM = """\
 You are a senior wound care clinician preparing a structured evidence summary for a clinical team.
 Be concise, precise, and grounded in the evidence provided. Use plain language where possible.
 """
+
+_APPEAL_SYSTEM = """\
+You are assisting a physician's office in drafting the clinical-evidence section of a prior \
+authorization appeal for a wound-care cellular/tissue-based product (CTP). Ground every claim \
+strictly in the candidate articles provided — never invent citations, statistics, or claims not \
+supported by the given abstracts. This section is evidence-only and must not reference any \
+specific patient by name or identifying detail. Be concise and professional.
+"""
+
+# Denial-reason-specific framing — this is what makes the rationale rebut the
+# actual denial rather than restate generic product benefits (generic appeal
+# letters underperform targeted ones).
+_DENIAL_REASON_FRAMING: dict[str, str] = {
+    "not_medically_necessary": (
+        "The payer denied this request as 'not medically necessary.' Frame the rationale around "
+        "objective clinical criteria (wound chronicity, documented failure of conservative care) "
+        "and the peer-reviewed evidence base demonstrating clinical efficacy for this indication."
+    ),
+    "investigational_experimental": (
+        "The payer denied this request as 'investigational' or 'experimental.' Frame the rationale "
+        "around the existence of peer-reviewed, published clinical evidence (RCTs / systematic "
+        "reviews where available) establishing this as an evidence-based treatment rather than an "
+        "experimental one. Do not assert FDA clearance/approval status unless it is stated in the "
+        "provided abstracts."
+    ),
+    "conservative_care_not_exhausted": (
+        "The payer denied this request stating conservative/standard wound care was not exhausted. "
+        "Assume the conservative-care trial and its failure are already documented elsewhere in the "
+        "appeal — do not restate them. Frame the rationale around why the evidence supports "
+        "escalating to this product once standard care has failed."
+    ),
+    "other": (
+        "Frame the rationale as a general medical-necessity argument grounded strictly in the "
+        "evidence provided."
+    ),
+}
+
+
+class _AppealKeyFinding(BaseModel):
+    pmid: str = Field(description="PubMed ID of the cited article — must be one of the candidate PMIDs given.")
+    key_finding: str = Field(description="One sentence summarizing this article's finding as it supports the appeal.")
+
+
+class _AppealEvidence(BaseModel):
+    clinical_rationale: str = Field(
+        description="2-4 sentence clinical rationale paragraph, professional tone, suitable for a "
+                    "physician-signed prior authorization appeal letter."
+    )
+    key_findings: list[_AppealKeyFinding] = Field(
+        description="One entry per candidate article provided, same PMIDs, in the same order."
+    )
 
 
 # ── Agent state ────────────────────────────────────────────────────────────────
@@ -306,6 +360,91 @@ class WoundCareAgent:
         except Exception as exc:
             logger.error("Export error: %s", exc)
         return paths
+
+    def generate_appeal_evidence(
+        self,
+        *,
+        product: str,
+        diagnosis: str,
+        denial_reason: str,
+        max_results: int = 15,
+    ) -> dict:
+        """
+        Search PubMed for the strongest evidence supporting `product` for `diagnosis`,
+        then draft a denial-reason-framed clinical rationale plus a PMID evidence table
+        for Section 4 of a wound-graft prior-authorization appeal.
+
+        Inputs are limited to product / diagnosis / denial-reason category — no
+        patient-identifying data is accepted or produced by this method.
+
+        Returns:
+          {
+            "clinical_rationale": str,
+            "evidence_rows": [{"pmid", "citation", "evidence_level", "key_finding", "pubmed_url"}, ...],
+            "articles_considered": int,
+            "search_metadata": dict,
+          }
+        """
+        query = f"{product} {diagnosis}"
+        search_result = self.search(query=query, max_results=max_results)
+        articles = search_result["articles"]
+
+        if not articles:
+            return {
+                "clinical_rationale": "",
+                "evidence_rows": [],
+                "articles_considered": 0,
+                "search_metadata": search_result["search_metadata"],
+            }
+
+        ranked = rank_articles(articles)[:3]
+        framing = _DENIAL_REASON_FRAMING.get(denial_reason, _DENIAL_REASON_FRAMING["other"])
+
+        candidates_block = "\n".join(
+            f"- PMID {a.pmid} | {classify_evidence_level(a.article_type)} | "
+            f"{a.format_authors(3)} ({(a.pub_date or '')[:4]}) | {a.journal}\n"
+            f"  Title: {a.title}\n"
+            f"  Abstract: {(a.abstract or 'No abstract')[:600]}"
+            for a in ranked
+        )
+
+        prompt = (
+            f"Product/CTP under appeal: {product}\n"
+            f"Diagnosis: {diagnosis}\n"
+            f"Denial reason category: {denial_reason}\n\n"
+            f"{framing}\n\n"
+            "Candidate supporting articles (already selected as the strongest available "
+            "evidence for this product/diagnosis — cite ONLY these, do not invent PMIDs or "
+            "claims beyond what is stated in the abstracts below):\n\n"
+            f"{candidates_block}\n\n"
+            "Write the clinical rationale paragraph and, for EACH candidate article above, "
+            "a one-sentence key finding relevant to this appeal."
+        )
+
+        structured_llm = self.llm_plain.with_structured_output(_AppealEvidence)
+        result: _AppealEvidence = structured_llm.invoke([
+            SystemMessage(content=_APPEAL_SYSTEM),
+            HumanMessage(content=prompt),
+        ])
+
+        finding_by_pmid = {kf.pmid: kf.key_finding for kf in result.key_findings}
+        evidence_rows = [
+            {
+                "pmid":           a.pmid,
+                "citation":       f"{a.format_authors(3)}, {a.journal}, {(a.pub_date or '')[:4]}",
+                "evidence_level": classify_evidence_level(a.article_type),
+                "key_finding":    finding_by_pmid.get(a.pmid, "See abstract."),
+                "pubmed_url":     a.pubmed_url,
+            }
+            for a in ranked
+        ]
+
+        return {
+            "clinical_rationale": result.clinical_rationale,
+            "evidence_rows":      evidence_rows,
+            "articles_considered": len(articles),
+            "search_metadata":    search_result["search_metadata"],
+        }
 
     def save_alert(self, name: str, query: str, params: dict, filepath: str = "alerts.json") -> None:
         """Persist a saved search for later re-running."""

@@ -79,3 +79,61 @@ def log_search(
             writer.writerow(record)
     except OSError as exc:
         logger.warning("Could not write to %s: %s", LOG_FILE, exc)
+
+
+# ── PA Appeal Builder audit log ─────────────────────────────────────────────────
+# Separate file/schema from the search log above — different fields, so a shared
+# CSV would produce ragged rows. Logs product/diagnosis/denial-reason category
+# only; never patient-identifying data.
+
+_appeal_default_log = "/data/appeal_log.csv" if os.getenv("RENDER") else "appeal_log.csv"
+APPEAL_LOG_FILE = Path(os.getenv("APPEAL_LOG_FILE", _appeal_default_log))
+
+_APPEAL_FIELDS = [
+    "timestamp",
+    "email",
+    "product",
+    "diagnosis",
+    "denial_reason",
+    "provider",
+    "model",
+    "articles_considered",
+    "evidence_rows",
+]
+
+
+def log_appeal_generation(
+    *,
+    email: str,
+    product: str,
+    diagnosis: str,
+    denial_reason: str,
+    provider: str,
+    model: str,
+    articles_considered: int,
+    evidence_rows: int,
+) -> None:
+    """Log a completed PA-appeal evidence generation event. No patient data is logged."""
+    record = {
+        "timestamp":            datetime.now(timezone.utc).isoformat(),
+        "email":                email,
+        "product":              product,
+        "diagnosis":            diagnosis,
+        "denial_reason":        denial_reason,
+        "provider":             provider,
+        "model":                model,
+        "articles_considered":  articles_considered,
+        "evidence_rows":        evidence_rows,
+    }
+
+    logger.info("APPEAL_EVENT %s", json.dumps(record))
+
+    try:
+        write_header = not APPEAL_LOG_FILE.exists() or APPEAL_LOG_FILE.stat().st_size == 0
+        with open(APPEAL_LOG_FILE, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=_APPEAL_FIELDS)
+            if write_header:
+                writer.writeheader()
+            writer.writerow(record)
+    except OSError as exc:
+        logger.warning("Could not write to %s: %s", APPEAL_LOG_FILE, exc)
