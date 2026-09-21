@@ -441,7 +441,7 @@ example_queries = [
 ]
 st.caption("Examples: " + " · ".join(f"`{q}`" for q in example_queries))
 
-search_btn = st.button("🔍 Search PubMed", type="primary", use_container_width=True)
+search_btn = st.button("🔍 Search PubMed & Cochrane", type="primary", use_container_width=True)
 
 
 # ── Run search — stores result in session_state, does NOT render yet ──────────
