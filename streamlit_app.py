@@ -388,7 +388,7 @@ if st.session_state.appeal_result is not None:
             from docx_export import fill_section4
             _template_path = os.getenv(
                 "PA_TEMPLATE_PATH",
-                str(Path(__file__).resolve().parent.parent / "PA_Biological_Dressing_Template.docx"),
+                str(Path(__file__).resolve().parent / "PA_Biological_Dressing_Template.docx"),
             )
             if os.path.exists(_template_path):
                 _buf = io.BytesIO()
