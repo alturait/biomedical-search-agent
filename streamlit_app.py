@@ -209,10 +209,7 @@ with st.sidebar:
     st.markdown("---")
 
     provider = "openai"
-    model_map = {
-        "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
-    }
-    model = st.selectbox("Model", model_map[provider])
+    model = "gpt-4o"
 
     st.markdown("---")
     st.subheader("Search Parameters")
